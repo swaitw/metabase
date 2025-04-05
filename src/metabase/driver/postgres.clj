@@ -79,6 +79,7 @@
                               :uuid-type                true
                               :split-part               true
                               :uploads                  true
+                              :expression-literals      true
                               :expressions/text         true
                               :expressions/integer      true
                               :expressions/date         true}]
@@ -207,8 +208,7 @@
     (assoc driver.common/additional-options
            :placeholder "prepareThreshold=0")
     driver.common/default-advanced-options]
-   (map u/one-or-many)
-   (apply concat)))
+   (into [] (mapcat u/one-or-many))))
 
 (defmethod driver/db-start-of-week :postgres
   [_]
@@ -677,7 +677,7 @@
 
 (defmethod sql.qp/->honeysql [:postgres :date]
   [driver [_ value]]
-  [:to_date (sql.qp/->honeysql driver value) "YYYY-MM-DD"])
+  [:to_date (sql.qp/->honeysql driver value) [:inline "YYYY-MM-DD"]])
 
 (defn- format-pg-conversion [_fn [expr psql-type]]
   (let [[expr-sql & expr-args] (sql/format-expr expr {:nested true})]

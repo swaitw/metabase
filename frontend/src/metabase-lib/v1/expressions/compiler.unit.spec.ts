@@ -43,14 +43,33 @@ function aggregation(source: string) {
 
 describe("old recursive-parser tests", () => {
   it("should parse numeric literals", () => {
-    expect(expr("0")).toEqual(["value", 0, null]);
-    expect(expr("42")).toEqual(["value", 42, null]);
-    expect(expr("1.0")).toEqual(["value", 1, null]);
-    expect(expr("0.123")).toEqual(["value", 0.123, null]);
+    expect(expr("0")).toEqual(["value", 0, { base_type: "type/Integer" }]);
+    expect(expr("42")).toEqual(["value", 42, { base_type: "type/Integer" }]);
+    expect(expr("1.0")).toEqual(["value", 1, { base_type: "type/Integer" }]);
+    expect(expr("0.123")).toEqual([
+      "value",
+      0.123,
+      { base_type: "type/Float" },
+    ]);
+    expect(expr("9223372036854775807")).toEqual([
+      "value",
+      "9223372036854775807",
+      { base_type: "type/BigInteger" },
+    ]);
   });
 
   it("should parse string literals", () => {
-    // the strings are wrapped in length because top-level literals are not allowed
+    expect(expr("'Universe'")).toEqual([
+      "value",
+      "Universe",
+      { base_type: "type/Text" },
+    ]);
+    expect(expr('"answer"')).toEqual([
+      "value",
+      "answer",
+      { base_type: "type/Text" },
+    ]);
+    expect(expr('"\\""')).toEqual(["value", '"', { base_type: "type/Text" }]);
     expect(expr("length('Universe')")).toEqual(["length", "Universe"]);
     expect(expr('length("answer")')).toEqual(["length", "answer"]);
     expect(expr('length("\\"")')).toEqual(["length", '"']);
@@ -75,15 +94,15 @@ describe("old recursive-parser tests", () => {
   });
 
   it("should parse unary expressions", () => {
-    expect(expr("+6")).toEqual(["value", 6, null]);
-    expect(expr("++7")).toEqual(["value", 7, null]);
-    expect(expr("-+8")).toEqual(["value", -8, null]);
+    expect(expr("+6")).toEqual(["value", 6, { base_type: "type/Integer" }]);
+    expect(expr("++7")).toEqual(["value", 7, { base_type: "type/Integer" }]);
+    expect(expr("-+8")).toEqual(["value", -8, { base_type: "type/Integer" }]);
   });
 
   it("should flatten unary expressions", () => {
-    expect(expr("--5")).toEqual(["-", -5]);
-    expect(expr("- 6")).toEqual(["value", -6, null]);
-    expect(expr("+-7")).toEqual(["value", -7, null]);
+    expect(expr("--5")).toEqual(["value", 5, { base_type: "type/Integer" }]);
+    expect(expr("- 6")).toEqual(["value", -6, { base_type: "type/Integer" }]);
+    expect(expr("+-7")).toEqual(["value", -7, { base_type: "type/Integer" }]);
     expect(expr("sqrt(-1)")).toEqual(["sqrt", -1]);
     expect(expr("- [Total]")).toEqual(["-", total]);
     expect(expr("-[Total]")).toEqual(["-", total]);
@@ -126,7 +145,6 @@ describe("old recursive-parser tests", () => {
     expect(expr("trim(ID)")).toEqual(["trim", id]);
   });
 
-  // TODO: text and integer don't work
   it("should parse cast calls", () => {
     expect(expr("text(ID)")).toEqual(["text", id]);
     expect(expr("integer(ID)")).toEqual(["integer", id]);
@@ -136,7 +154,6 @@ describe("old recursive-parser tests", () => {
     expect(expr("CASE([Total] = 1, 'A')")).toEqual([
       "case",
       [[["=", total, 1], "A"]],
-      {},
     ]);
 
     expect(expr("CASE([Total] = 1, 'A', [Total] = 2, 'B')")).toEqual([
@@ -145,7 +162,6 @@ describe("old recursive-parser tests", () => {
         [["=", total, 1], "A"],
         [["=", total, 2], "B"],
       ],
-      {},
     ]);
 
     expect(expr("CASE([Total] = 1, 'A', 'B')")).toEqual([
@@ -168,7 +184,6 @@ describe("old recursive-parser tests", () => {
     expect(expr("IF([Total] = 1, 'A')")).toEqual([
       "if",
       [[["=", total, 1], "A"]],
-      {},
     ]);
 
     expect(expr("IF([Total] = 1, 'A', [Total] = 2, 'B')")).toEqual([
@@ -177,7 +192,6 @@ describe("old recursive-parser tests", () => {
         [["=", total, 1], "A"],
         [["=", total, 2], "B"],
       ],
-      {},
     ]);
 
     expect(expr("IF([Total] = 1, 'A', 'B')")).toEqual([
@@ -207,7 +221,7 @@ describe("old recursive-parser tests", () => {
   it.each([
     {
       source: "contains('A', 'case-insensitive')",
-      expression: ["contains", "A", "case-insensitive"],
+      expression: ["contains", "A", { "case-sensitive": false }],
     },
     {
       source: "contains('A', 'B', 'case-insensitive')",
@@ -401,5 +415,41 @@ describe("old recursive-parser tests", () => {
   it("should resolve segments", () => {
     expect(filter("[Expensive Things]")).toEqual(segment);
     expect(expr("NOT [Expensive Things]")).toEqual(["not", segment]);
+  });
+});
+
+describe("Specific expressions", () => {
+  it("should allow using OFFSET as a CASE argument (metabase#42377)", () => {
+    expect(expr(`Sum(case([Total] > 0, Offset([Total], -1)))`)).toEqual([
+      "sum",
+      [
+        "case",
+        [
+          [
+            [">", ["field", 13, { "base-type": "type/Float" }], 0],
+            [
+              "offset",
+              { "lib/uuid": expect.any(String) },
+              ["field", 13, { "base-type": "type/Float" }],
+              -1,
+            ],
+          ],
+        ],
+      ],
+    ]);
+  });
+
+  it("should support negated numbers", () => {
+    expect(expr(`-10`)).toEqual(["value", -10, { base_type: "type/Integer" }]);
+    expect(expr(`-3.1415`)).toEqual([
+      "value",
+      -3.1415,
+      { base_type: "type/Float" },
+    ]);
+    expect(expr(`-9223372036854775809`)).toEqual([
+      "value",
+      "-9223372036854775809",
+      { base_type: "type/BigInteger" },
+    ]);
   });
 });

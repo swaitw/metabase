@@ -38,8 +38,10 @@ import type {
 } from "metabase/visualizations/echarts/cartesian/model/types";
 import {
   computeTimeseriesDataInverval,
+  getTimeSeriesIntervalDuration,
   getTimezoneOrOffset,
   minTimeseriesUnit,
+  normalizeDate,
   tryGetDate,
 } from "metabase/visualizations/echarts/cartesian/utils/timeseries";
 import { computeNumericDataInverval } from "metabase/visualizations/lib/numeric";
@@ -553,6 +555,10 @@ export function getYAxisModel(
     label,
     formatter,
     isNormalized: stackType === "normalized",
+    splitNumber:
+      settings["graph.y_axis.split_number"] > 0
+        ? settings["graph.y_axis.split_number"]
+        : undefined,
   };
 }
 
@@ -648,6 +654,16 @@ export function getYAxisFormattingOptions({
   return {};
 }
 
+const getFormatUnit = (
+  dimensionColumn: DatasetColumn,
+  dataTimeSeriesInterval: TimeSeriesInterval,
+) => {
+  if (isAbsoluteDateTimeUnit(dataTimeSeriesInterval.unit)) {
+    return dataTimeSeriesInterval.unit ?? dimensionColumn.unit;
+  }
+
+  return dimensionColumn.unit;
+};
 export function getTimeSeriesXAxisModel(
   dimensionModel: DimensionModel,
   rawSeries: RawSeries,
@@ -673,11 +689,7 @@ export function getTimeSeriesXAxisModel(
   } = timeSeriesInfo;
   const formatter = (value: RowValue, unit?: DateTimeAbsoluteUnit) => {
     const formatUnit =
-      unit ??
-      dimensionColumn.unit ??
-      (isAbsoluteDateTimeUnit(dataTimeSeriesInterval.unit)
-        ? dataTimeSeriesInterval.unit
-        : undefined);
+      unit ?? getFormatUnit(dimensionColumn, dataTimeSeriesInterval);
     const column: DatasetColumn = {
       ...dimensionColumn,
       unit: formatUnit,
@@ -885,6 +897,11 @@ const getXAxisDateRangeFromSortedXAxisValues = (
   return [minDate, maxDate];
 };
 
+const DAY_INTERVAL: TimeSeriesInterval = {
+  count: 1,
+  unit: "day",
+};
+
 function getTimeSeriesXAxisInfo(
   xValues: RowValue[],
   rawSeries: RawSeries,
@@ -906,10 +923,7 @@ function getTimeSeriesXAxisInfo(
     rawSeries,
     showWarning,
   );
-  const interval = (computeTimeseriesDataInverval(xValues, unit) ?? {
-    count: 1,
-    unit: "day",
-  }) as TimeSeriesInterval;
+  const interval = computeTimeseriesDataInverval(xValues, unit) ?? DAY_INTERVAL;
 
   const range = getXAxisDateRangeFromSortedXAxisValues(xValues);
 
@@ -920,7 +934,19 @@ function getTimeSeriesXAxisInfo(
   let intervalsCount = 0;
 
   if (range) {
-    const [min, max] = range;
+    let [min, max] = range;
+
+    const intervalDurationMs = getTimeSeriesIntervalDuration(interval);
+    const isDayOrMore =
+      intervalDurationMs >= getTimeSeriesIntervalDuration(DAY_INTERVAL);
+
+    // If the interval is a day or more, normalize the dates to UTC to avoid
+    // the interference of timezone differences.
+    if (isDayOrMore) {
+      min = normalizeDate(min);
+      max = normalizeDate(max);
+    }
+
     // A single date counts as one interval
     intervalsCount = Math.abs(
       Math.ceil(max.diff(min, interval.unit) / interval.count),

@@ -907,6 +907,11 @@ describe("dashboard preview", () => {
       cy.button("Add filter").click();
     });
 
+    // Wait for the iframe to load
+    H.getIframeBody().within(() => {
+      cy.button(filter.name).should("not.exist");
+    });
+
     H.getIframeBody().within(() => {
       cy.log("Assert filter 1");
       cy.button(filter.name).click();
@@ -1213,9 +1218,6 @@ describe("issue 8490", () => {
       cy.findByText("로딩...")
         .should("be.visible")
         .then(resolveDashboardLoaderPromise);
-
-      // PDF export
-      cy.findByText("PDF로 내보내기").should("be.visible");
 
       cy.log("assert the line chart");
       H.getDashboardCard(0).within(() => {

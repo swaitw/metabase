@@ -61,6 +61,8 @@ export const getIsShowingSnippetSidebar = (state) =>
   getUiControls(state).isShowingSnippetSidebar;
 export const getIsShowingDataReference = (state) =>
   getUiControls(state).isShowingDataReference;
+export const getHighlightedNativeQueryLineNumbers = (state) =>
+  getUiControls(state).highlightedNativeQueryLineNumbers;
 
 // This selector can be called from public questions / dashboards, which do not
 // have state.qb
@@ -72,6 +74,7 @@ const SIDEBARS = [
   "isShowingChartTypeSidebar",
   "isShowingChartSettingsSidebar",
   "isShowingTimelineSidebar",
+  "isShowingAIQuestionAnalysisSidebar",
 
   "isShowingSummarySidebar",
 
@@ -218,7 +221,7 @@ const getLastRunDatasetQuery = createSelector(
   [getLastRunCard],
   (card) => card && card.dataset_query,
 );
-const getNextRunDatasetQuery = createSelector(
+export const getNextRunDatasetQuery = createSelector(
   [getCard],
   (card) => card && card.dataset_query,
 );
@@ -278,7 +281,7 @@ export const getLastRunQuestion = createSelector(
     card && metadata && new Question(card, metadata, parameterValues),
 );
 
-export const getQuestionWithParameters = createSelector(
+export const getQuestionWithoutComposing = createSelector(
   [getCard, getMetadata, getParameterValues],
   (card, metadata, parameterValues) => {
     if (!card || !metadata) {
@@ -289,7 +292,7 @@ export const getQuestionWithParameters = createSelector(
 );
 
 export const getQuestion = createSelector(
-  [getQuestionWithParameters, getQueryBuilderMode],
+  [getQuestionWithoutComposing, getQueryBuilderMode],
   (question, queryBuilderMode) => {
     if (!question) {
       return;
@@ -305,10 +308,10 @@ export const getQuestion = createSelector(
     // with a clean, ad-hoc, query.
     // This has to be skipped for users without data permissions.
     // See https://github.com/metabase/metabase/issues/20042
-    const { isEditable } = Lib.queryDisplayInfo(question.query());
-    return (isModel || isMetric) && isEditable
-      ? question.composeQuestion()
-      : question;
+    const composedQuestion =
+      isModel || isMetric ? question.composeQuestion() : question;
+    const { isEditable } = Lib.queryDisplayInfo(composedQuestion.query());
+    return isEditable ? composedQuestion : question;
   },
 );
 
@@ -670,15 +673,10 @@ export const getShouldShowUnsavedChangesWarning = createSelector(
  * Returns the card and query results data in a format that `Visualization.jsx` expects
  */
 export const getRawSeries = createSelector(
-  [
-    getQuestion,
-    getFirstQueryResult,
-    getLastRunDatasetQuery,
-    getIsShowingRawTable,
-  ],
-  (question, queryResult, lastRunDatasetQuery, isShowingRawTable) => {
+  [getCard, getFirstQueryResult, getLastRunDatasetQuery, getIsShowingRawTable],
+  (card, queryResult, lastRunDatasetQuery, isShowingRawTable) => {
     const rawSeries = createRawSeries({
-      question,
+      card,
       queryResult,
       datasetQuery: lastRunDatasetQuery,
     });
@@ -748,9 +746,19 @@ export const getIsNativeEditorOpen = createSelector(
   (isNative, uiControls) => isNative && uiControls.isNativeEditorOpen,
 );
 
-const getNativeEditorSelectedRange = createSelector(
+export const getNativeEditorSelectedRange = createSelector(
+  [getUiControls],
+  (uiControls) => uiControls && uiControls.nativeEditorSelectedRange?.[0],
+);
+
+const getNativeEditorSelectedRanges = createSelector(
   [getUiControls],
   (uiControls) => uiControls && uiControls.nativeEditorSelectedRange,
+);
+
+export const getIsNativeQueryFixApplied = createSelector(
+  [getUiControls],
+  (uiControls) => uiControls && uiControls.isNativeQueryFixApplied,
 );
 
 export const getIsTimeseries = createSelector(
@@ -877,7 +885,7 @@ export const getVisibleTimelineEvents = createSelector(
       .value(),
 );
 
-function getOffsetForQueryAndPosition(queryText, { row, column }) {
+export function getOffsetForQueryAndPosition(queryText, { row, column }) {
   const queryLines = queryText.split("\n");
   return (
     // the total length of the previous rows
@@ -911,6 +919,28 @@ export const getNativeEditorSelectedText = createSelector(
     const start = getOffsetForQueryAndPosition(queryText, selectedRange.start);
     const end = getOffsetForQueryAndPosition(queryText, selectedRange.end);
     return queryText.slice(start, end);
+  },
+);
+
+export const getAllNativeEditorSelectedText = createSelector(
+  [getNativeEditorSelectedRanges, getNextRunDatasetQuery],
+  (selectedRanges, query) => {
+    if (
+      selectedRanges == null ||
+      selectedRanges.length === 0 ||
+      query == null ||
+      query.native == null
+    ) {
+      return null;
+    }
+    const queryText = query.native.query;
+    const selectedText = selectedRanges.map((range) =>
+      queryText.slice(
+        getOffsetForQueryAndPosition(queryText, range.start),
+        getOffsetForQueryAndPosition(queryText, range.end),
+      ),
+    );
+    return selectedText.join("");
   },
 );
 
@@ -1043,7 +1073,7 @@ export function getEmbeddedParameterVisibility(state, slug) {
 
 export const getSubmittableQuestion = (state, question) => {
   const rawSeries = createRawSeries({
-    question: getQuestion(state),
+    card: getCard(state),
     queryResult: getFirstQueryResult(state),
     datasetQuery: getLastRunDatasetQuery(state),
   });

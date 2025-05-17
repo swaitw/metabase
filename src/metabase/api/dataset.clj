@@ -1,25 +1,26 @@
 (ns metabase.api.dataset
   "/api/dataset endpoints."
   (:require
-   [clojure.string :as str]
    [metabase.api.common :as api]
-   [metabase.api.field :as api.field]
    [metabase.api.macros :as api.macros]
-   [metabase.api.query-metadata :as api.query-metadata]
    [metabase.driver :as driver]
    [metabase.driver.util :as driver.u]
-   [metabase.events :as events]
+   [metabase.events.core :as events]
    [metabase.legacy-mbql.normalize :as mbql.normalize]
    [metabase.lib.schema.id :as lib.schema.id]
    [metabase.lib.schema.info :as lib.schema.info]
    [metabase.model-persistence.core :as model-persistence]
-   [metabase.models.params.custom-values :as custom-values]
    [metabase.models.visualization-settings :as mb.viz]
+   [metabase.parameters.chain-filter :as chain-filter]
+   [metabase.parameters.custom-values :as custom-values]
+   [metabase.parameters.field :as parameters.field]
+   [metabase.queries.core :as queries]
    [metabase.query-processor :as qp]
    [metabase.query-processor.compile :as qp.compile]
    [metabase.query-processor.middleware.constraints :as qp.constraints]
    [metabase.query-processor.middleware.permissions :as qp.perms]
    [metabase.query-processor.pivot :as qp.pivot]
+   [metabase.query-processor.schema :as qp.schema]
    [metabase.query-processor.streaming :as qp.streaming]
    [metabase.query-processor.util :as qp.util]
    [metabase.util :as u]
@@ -28,7 +29,6 @@
    [metabase.util.log :as log]
    [metabase.util.malli :as mu]
    [metabase.util.malli.schema :as ms]
-   [metabase.util.regex :as u.regex]
    [steffan-westcott.clj-otel.api.trace.span :as span]
    [toucan2.core :as t2]))
 
@@ -64,12 +64,15 @@
         (events/publish-event! :event/table-read {:object  (t2/select-one :model/Table :id table-id)
                                                   :user-id api/*current-user-id*})))
     ;; add sensible constraints for results limits on our query
-    (let [source-card-id (query->source-card-id query)
+    (let [source-card-id (query->source-card-id query) ; This is only set for direct :source-table "card__..."
           source-card    (when source-card-id
-                           (t2/select-one [:model/Card :result_metadata :type :card_schema] :id source-card-id))
+                           (t2/select-one [:model/Card :entity_id :result_metadata :type :card_schema] :id source-card-id))
           info           (cond-> {:executed-by api/*current-user-id*
                                   :context     context
                                   :card-id     source-card-id}
+                           (:entity_id source-card)
+                           (assoc :card-entity-id (:entity_id source-card))
+
                            (= (:type source-card) :model)
                            (assoc :metadata/model-metadata (:result_metadata source-card)))]
       (binding [qp.perms/*card-id* source-card-id]
@@ -94,14 +97,6 @@
 
 ;;; ----------------------------------- Downloading Query Results in Other Formats -----------------------------------
 
-(def export-formats
-  "Valid export formats for downloading query results."
-  (mapv u/qualified-name (qp.streaming/export-formats)))
-
-(def ExportFormat
-  "Schema for valid export formats for downloading query results."
-  (into [:enum {:api/regex (u.regex/re-or export-formats)}] export-formats))
-
 (mu/defn export-format->context :- ::lib.schema.info/context
   "Return the `:context` that should be used when saving a QueryExecution triggered by a request to download results
   in `export-format`.
@@ -109,13 +104,6 @@
     (export-format->context :json) ;-> :json-download"
   [export-format]
   (keyword (str (u/qualified-name export-format) "-download")))
-
-(def export-format-regex
-  "Regex for matching valid export formats (e.g., `json`) for queries.
-   Inteneded for use in an endpoint definition:
-
-     (api.macros/defendpoint :post [\"/:export-format\", :export-format export-format-regex]"
-  (re-pattern (str "(" (str/join "|" (map u/qualified-name (qp.streaming/export-formats))) ")")))
 
 (def ^:private column-ref-regex #"^\[.+\]$")
 
@@ -127,10 +115,10 @@
     json-key
     (keyword json-key)))
 
-(api.macros/defendpoint :post ["/:export-format", :export-format export-format-regex]
+(api.macros/defendpoint :post ["/:export-format", :export-format qp.schema/export-formats-regex]
   "Execute a query and download the result data as a file in the specified format."
   [{:keys [export-format]} :- [:map
-                               [:export-format ExportFormat]]
+                               [:export-format ::qp.schema/export-format]]
    _query-params
    {{:keys [was-pivot] :as query} :query
     format-rows                   :format_rows
@@ -175,7 +163,7 @@
    _query-params
    query :- [:map
              [:database ms/PositiveInt]]]
-  (api.query-metadata/batch-fetch-query-metadata [query]))
+  (queries/batch-fetch-query-metadata [query]))
 
 (api.macros/defendpoint :post "/native"
   "Fetch a native version of an MBQL query."
@@ -197,9 +185,7 @@
   [_route-params
    _query-params
    {:keys [database] :as query} :- [:map
-                                    [:database {:optional true} [:maybe ms/PositiveInt]]]]
-  (when-not database
-    (throw (Exception. (str (tru "`database` is required for all queries.")))))
+                                    [:database ms/PositiveInt]]]
   (api/read-check :model/Database database)
   (let [info {:executed-by api/*current-user-id*
               :context     :ad-hoc}]
@@ -216,7 +202,7 @@
     (throw (ex-info (tru "Missing field-ids for parameter")
                     {:status-code 400})))
   (-> (reduce (fn [resp id]
-                (let [{values :values more? :has_more_values} (api.field/search-values-from-field-id id query)]
+                (let [{values :values more? :has_more_values} (parameters.field/search-values-from-field-id id query)]
                   (-> resp
                       (update :values concat values)
                       (update :has_more_values #(or % more?)))))
@@ -254,3 +240,27 @@
                               [:parameter ms/Parameter]
                               [:field_ids {:optional true} [:maybe [:sequential ms/PositiveInt]]]]]
   (parameter-values parameter field-ids query))
+
+(defn param-remapped-value
+  "Fetch the remapped value for the given `value` of parameter with ID `:param-key` of `card`."
+  [[field-id :as field-ids] param value]
+  (or (custom-values/parameter-remapped-value
+       param
+       value
+       #(-> (if (= (count field-ids) 1)
+              (chain-filter/chain-filter field-id [{:field-id field-id, :op :=, :value value}] :limit 1)
+              (when-let [pk-field-id (custom-values/pk-of-fk-pk-field-ids field-ids)]
+                (chain-filter/chain-filter pk-field-id [{:field-id pk-field-id, :op :=, :value value}] :limit 1)))
+            :values
+            first))
+      [value]))
+
+(api.macros/defendpoint :post "/parameter/remapping"
+  "Return the remapped parameter values for cards or dashboards that are being edited."
+  [_route-params
+   _query-params
+   {:keys [parameter value field_ids]} :- [:map
+                                           [:parameter ms/Parameter]
+                                           [:value :any]
+                                           [:field_ids {:optional true} [:maybe [:sequential ms/PositiveInt]]]]]
+  (param-remapped-value field_ids parameter value))

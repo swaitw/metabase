@@ -5,8 +5,8 @@
    [clojure.string :as str]
    [clojure.test :refer :all]
    [medley.core :as m]
-   [metabase.db.metadata-queries :as metadata-queries]
    [metabase.driver :as driver]
+   [metabase.driver.common.table-rows-sample :as table-rows-sample]
    [metabase.driver.mysql :as mysql]
    [metabase.driver.mysql-test :as mysql-test]
    [metabase.driver.sql :as driver.sql]
@@ -576,7 +576,7 @@
                                                                    []
 
                                                                    (original-get-table-pks driver conn db-name-or-nil table)))
-                    metadata-queries/nested-field-sample-limit 4]
+                    table-rows-sample/nested-field-sample-limit 4]
         (mt/dataset json-int-turn-string
           (when-not (mysql/mariadb? (mt/db))
             (sync/sync-database! (mt/db))
@@ -755,6 +755,13 @@
                         (sql.tx/create-index-sql driver/*driver* "conditional_index" ["column"] {:condition "id > 2"}))
          (is (= #{{:type :normal-column-index :value "id"}}
                 (describe-table-indexes (t2/select-one :model/Table (mt/id :conditional_index))))))))))
+
+(deftest describe-fields-are-sorted-test
+  (mt/test-drivers (mt/normal-drivers-with-feature :describe-fields)
+    (let [returned-fields (into [] (driver/describe-fields driver/*driver* (mt/db)))
+          sorted-fields (sort-by (juxt :table-schema :table-name :database-position) returned-fields)]
+      (is (= sorted-fields
+             returned-fields)))))
 
 (defmethod driver/database-supports? [::driver/driver ::describe-materialized-view-fields]
   [_driver _feature _database]

@@ -14,9 +14,9 @@
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
    [metabase.driver.sql.query-processor :as sql.qp]
    [metabase.driver.util :as driver.u]
+   [metabase.lib-be.metadata.jvm :as lib.metadata.jvm]
    [metabase.lib.core :as lib]
    [metabase.lib.metadata :as lib.metadata]
-   [metabase.lib.metadata.jvm :as lib.metadata.jvm]
    [metabase.lib.test-util :as lib.tu]
    [metabase.premium-features.core :as premium-features]
    [metabase.query-processor :as qp]
@@ -158,6 +158,7 @@
                       {:name "tunnel-private-key"}
                       {:name "tunnel-private-key-passphrase"}
                       {:name "advanced-options"}
+                      {:name "destination-database"}
                       {:name "auto_run_queries"}
                       {:name "let-user-control-scheduling"}
                       {:name "schedules.metadata_sync"}

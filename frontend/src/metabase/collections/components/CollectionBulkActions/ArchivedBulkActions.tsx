@@ -73,7 +73,6 @@ export const ArchivedBulkActions = ({
     Promise.all(actions).finally(() => clearSelected());
     dispatch(
       addUndo({
-        icon: "check",
         message: ngettext(
           msgid`${selected.length} item has been permanently deleted.`,
           `${selected.length} items have been permanently deleted.`,
@@ -112,7 +111,7 @@ export const ArchivedBulkActions = ({
         {t`Delete permanently`}
       </BulkActionDangerButton>
 
-      {/* This should probably be external so that we can hide 
+      {/* This should probably be external so that we can hide
           the bar when any other modals are displayed */}
       <ConfirmModal
         opened={hasSelectedItems && selectedAction === "delete"}

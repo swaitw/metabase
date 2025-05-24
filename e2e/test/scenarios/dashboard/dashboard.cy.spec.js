@@ -125,6 +125,10 @@ describe("scenarios > dashboard", () => {
       () => {
         cy.intercept("POST", "api/collection").as("createCollection");
         cy.visit("/");
+        cy.findByTestId("home-page").should(
+          "contain",
+          "Try out these sample x-rays to see what Metabase can do.",
+        );
         H.closeNavigationSidebar();
         H.appBar().findByText("New").click();
         H.popover().findByText("Dashboard").should("be.visible").click();
@@ -1197,27 +1201,26 @@ describe("scenarios > dashboard", () => {
     });
 
     cy.findByTestId("dashcard").findByText("Orders");
-
-    // Verify the card is visible when it returned an error
-    H.filterWidget().click();
-    H.dashboardParametersPopover().within(() => {
-      cy.findByPlaceholderText("Enter an ID").type("text{enter}");
-      cy.button("Add filter").click();
-    });
-
-    cy.findByTestId("dashcard").within(() => {
-      cy.findByText("There was a problem displaying this chart.");
-    });
   });
 
   describe("warn before leave", () => {
+    beforeEach(() => {
+      cy.intercept("GET", "/api/card/*/query_metadata").as("queryMetadata");
+    });
+
     it("should warn a user before leaving after adding, editing, or removing a card on a dashboard", () => {
       cy.visit("/");
+
+      cy.findByTestId("home-page").should(
+        "contain",
+        "Try out these sample x-rays to see what Metabase can do.",
+      );
 
       // add
       createNewDashboard();
       cy.findByTestId("dashboard-header").icon("add").click();
       cy.findByTestId("add-card-sidebar").findByText("Orders").click();
+      cy.wait("@queryMetadata");
       assertPreventLeave({ openSidebar: false });
       H.saveDashboard();
 
@@ -1236,55 +1239,52 @@ describe("scenarios > dashboard", () => {
       assertPreventLeave();
     });
 
-    it(
-      "should warn a user before leaving after adding, removed, moving, or duplicating a tab",
-      { tags: "@flaky" },
-      () => {
-        cy.visit("/");
+    it("should warn a user before leaving after adding, removed, moving, or duplicating a tab", () => {
+      cy.visit("/");
 
-        // add tab
-        createNewDashboard();
-        H.createNewTab();
-        assertPreventLeave();
-        H.saveDashboard();
+      // add tab
+      createNewDashboard();
+      H.createNewTab();
+      assertPreventLeave();
+      H.saveDashboard();
 
-        // move tab
-        H.editDashboard();
-        dragOnXAxis(cy.findByRole("tab", { name: "Tab 2" }), -200);
-        // assert tab order is now correct and ui has caught up to result of dragging the tab
-        cy.findAllByRole("tab").eq(0).should("have.text", "Tab 2");
-        cy.findAllByRole("tab").eq(1).should("have.text", "Tab 1");
+      // move tab
+      H.editDashboard();
+      dragOnXAxis(cy.findByRole("tab", { name: "Tab 2" }), -200);
+      // assert tab order is now correct and ui has caught up to result of dragging the tab
+      cy.findAllByRole("tab").eq(0).should("have.text", "Tab 2");
+      cy.findAllByRole("tab").eq(1).should("have.text", "Tab 1");
 
-        assertPreventLeave();
-        H.saveDashboard();
+      cy.wait(1000);
+      assertPreventLeave();
+      H.saveDashboard();
 
-        // duplicate tab
-        H.editDashboard();
-        H.duplicateTab("Tab 1");
-        assertPreventLeave();
-        H.saveDashboard();
+      // duplicate tab
+      H.editDashboard();
+      H.duplicateTab("Tab 1");
+      assertPreventLeave();
+      H.saveDashboard();
 
-        cy.findByRole("tab", { name: "Copy of Tab 1" }).should(
-          "have.attr",
-          "aria-selected",
-          "true",
-        );
+      cy.findByRole("tab", { name: "Copy of Tab 1" }).should(
+        "have.attr",
+        "aria-selected",
+        "true",
+      );
 
-        // remove tab
-        H.editDashboard();
-        H.deleteTab("Copy of Tab 1");
-        // url is changed after removing the tab
-        // can be a side effect
-        cy.url().should("include", "tab-1");
-        assertPreventLeave();
-        H.saveDashboard({ waitMs: 100 });
+      // remove tab
+      H.editDashboard();
+      H.deleteTab("Copy of Tab 1");
+      // url is changed after removing the tab
+      // can be a side effect
+      cy.url().should("include", "tab-1");
+      assertPreventLeave();
+      H.saveDashboard({ waitMs: 100 });
 
-        // rename tab
-        H.editDashboard();
-        H.renameTab("Tab 2", "Foo tab");
-        assertPreventLeave();
-      },
-    );
+      // rename tab
+      H.editDashboard();
+      H.renameTab("Tab 2", "Foo tab");
+      assertPreventLeave();
+    });
 
     function createNewDashboard() {
       H.newButton("Dashboard").click();
@@ -1345,7 +1345,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
       H.saveDashboard();
       validateIFrame("https://example.com");
 
-      H.expectGoodSnowplowEvent({
+      H.expectUnstructuredSnowplowEvent({
         event: "new_iframe_card_created",
         target_id: id,
         event_detail: "example.com",
@@ -1359,7 +1359,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
     const newTitle = "New title";
     cy.findByTestId("dashboard-name-heading").clear().type(newTitle).blur();
     H.saveDashboard();
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "dashboard_saved",
     });
   });
@@ -1391,7 +1391,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
       /orders in a dashboard/i,
     );
 
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "new_link_card_created",
     });
   });
@@ -1412,7 +1412,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
         .click({ force: true }) // disable
         .click({ force: true }); // enable
 
-      H.expectGoodSnowplowEvent(
+      H.expectUnstructuredSnowplowEvent(
         {
           event: "card_set_to_hide_when_no_results",
           dashboard_id: ORDERS_DASHBOARD_ID,
@@ -1474,7 +1474,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
     cy.findByLabelText("Toggle width").click();
     H.popover().findByText("Full width").click();
     H.assertDashboardFullWidth();
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "dashboard_width_toggled",
       full_width: true,
     });
@@ -1489,7 +1489,7 @@ H.describeWithSnowplow("scenarios > dashboard", () => {
     cy.findByLabelText("Toggle width").click();
     H.popover().findByText("Full width").click();
     H.assertDashboardFixedWidth();
-    H.expectGoodSnowplowEvent({
+    H.expectUnstructuredSnowplowEvent({
       event: "dashboard_width_toggled",
       full_width: false,
     });

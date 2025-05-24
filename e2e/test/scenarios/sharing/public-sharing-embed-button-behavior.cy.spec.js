@@ -289,7 +289,7 @@ describe("#39152 sharing an unsaved question", () => {
           H.openSharingMenu(/public link/i);
           cy.findByTestId("copy-button").realClick();
           if (resource === "dashboard") {
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "public_link_copied",
               artifact: "dashboard",
               format: null,
@@ -297,7 +297,7 @@ describe("#39152 sharing an unsaved question", () => {
           }
 
           if (resource === "question") {
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "public_link_copied",
               artifact: "question",
               format: "html",
@@ -305,7 +305,7 @@ describe("#39152 sharing an unsaved question", () => {
 
             H.popover().findByText("csv").click();
             cy.findByTestId("copy-button").realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "public_link_copied",
               artifact: "question",
               format: "csv",
@@ -313,7 +313,7 @@ describe("#39152 sharing an unsaved question", () => {
 
             H.popover().findByText("xlsx").click();
             cy.findByTestId("copy-button").realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "public_link_copied",
               artifact: "question",
               format: "xlsx",
@@ -321,7 +321,7 @@ describe("#39152 sharing an unsaved question", () => {
 
             H.popover().findByText("json").click();
             cy.findByTestId("copy-button").realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "public_link_copied",
               artifact: "question",
               format: "json",
@@ -336,7 +336,7 @@ describe("#39152 sharing an unsaved question", () => {
 
           H.openSharingMenu(/public link/i);
           H.popover().button("Remove public link").click();
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "public_link_removed",
             artifact: resource,
             source: "public-share",
@@ -365,7 +365,7 @@ describe("#39152 sharing an unsaved question", () => {
 
           H.popover().findByTestId("copy-button").click();
 
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "public_embed_code_copied",
             artifact: resource,
             source: "public-embed",
@@ -382,7 +382,7 @@ describe("#39152 sharing an unsaved question", () => {
 
           H.popover().findByText("Remove public link").click();
 
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "public_link_removed",
             artifact: resource,
             source: "public-embed",
@@ -401,7 +401,7 @@ describe("#39152 sharing an unsaved question", () => {
           cy.findByTestId("embed-backend")
             .findByTestId("copy-button")
             .realClick();
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "static_embed_code_copied",
             artifact: resource,
             language: "node",
@@ -420,7 +420,7 @@ describe("#39152 sharing an unsaved question", () => {
           cy.findByTestId("embed-frontend")
             .findByTestId("copy-button")
             .realClick();
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "static_embed_code_copied",
             artifact: resource,
             language: "pug",
@@ -446,7 +446,7 @@ describe("#39152 sharing an unsaved question", () => {
           cy.findByTestId("embed-backend")
             .findByTestId("copy-button")
             .realClick();
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "static_embed_code_copied",
             artifact: resource,
             language: "ruby",
@@ -486,7 +486,7 @@ describe("#39152 sharing an unsaved question", () => {
           cy.findByTestId("embed-backend")
             .findByTestId("copy-button")
             .realClick();
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "static_embed_code_copied",
             artifact: resource,
             language: "python",
@@ -509,7 +509,7 @@ describe("#39152 sharing an unsaved question", () => {
             cy.findByTestId("embed-backend")
               .findByTestId("copy-button")
               .realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_code_copied",
               artifact: resource,
               language: "python",
@@ -542,7 +542,7 @@ describe("#39152 sharing an unsaved question", () => {
             cy.findByTestId("embed-backend")
               .findByTestId("copy-button")
               .realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_code_copied",
               artifact: resource,
               language: "node",
@@ -554,14 +554,14 @@ describe("#39152 sharing an unsaved question", () => {
                 titled: true,
                 font: "instance",
                 theme: "light",
-                downloads: true,
+                enabled_download_types: { pdf: true, results: true },
               },
             });
 
             cy.findByTestId("embed-frontend")
               .findByTestId("copy-button")
               .realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_code_copied",
               artifact: resource,
               language: "pug",
@@ -573,7 +573,7 @@ describe("#39152 sharing an unsaved question", () => {
                 titled: true,
                 font: "instance",
                 theme: "light",
-                downloads: true,
+                enabled_download_types: { pdf: true, results: true },
               },
             });
 
@@ -587,7 +587,7 @@ describe("#39152 sharing an unsaved question", () => {
             cy.findByTestId("embed-backend")
               .findByTestId("copy-button")
               .realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_code_copied",
               artifact: resource,
               language: "ruby",
@@ -599,7 +599,7 @@ describe("#39152 sharing an unsaved question", () => {
                 titled: true,
                 font: "instance",
                 theme: "light",
-                downloads: true,
+                enabled_download_types: { pdf: true, results: true },
               },
             });
 
@@ -628,16 +628,25 @@ describe("#39152 sharing an unsaved question", () => {
             H.popover().findByText("Oswald").click();
 
             cy.log(
-              "Assert that it sends `downloads: false` when downloads are disabled",
+              "Assert that it sends `enabled_download_types: { pdf: false, results: false }` when both are disabled",
             );
             H.modal()
-              .findByLabelText("Download buttons")
+              .findByLabelText(
+                resource === "dashboard"
+                  ? "Results (csv, xlsx, json, png)"
+                  : "Download (csv, xlsx, json, png)",
+              )
               .click({ force: true });
+
+            // We have to also disable PDF exports for both to be disabled
+            if (resource === "dashboard") {
+              cy.findByLabelText("Export to PDF").click({ force: true });
+            }
 
             cy.findByTestId("embed-backend")
               .findByTestId("copy-button")
               .realClick();
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_code_copied",
               artifact: resource,
               language: "python",
@@ -649,10 +658,85 @@ describe("#39152 sharing an unsaved question", () => {
                 titled: false,
                 font: "custom",
                 theme: "night",
-                downloads: false,
+                enabled_download_types: { pdf: false, results: false },
               },
             });
           });
+
+          // Individual download options are only supported for dashboards
+          if (resource === "dashboard") {
+            it("should support disabling PDF and result downloads individually in `static_embed_code_copied`", () => {
+              cy.get("@resourceId").then((id) => {
+                visitResource(resource, id);
+              });
+              H.openStaticEmbeddingModal({ acceptTerms: false });
+
+              H.modal().within(() => {
+                cy.findByRole("tab", { name: "Look and Feel" }).click();
+              });
+
+              cy.log(
+                "Assert that it sends `enabled_download_types: { pdf: false, results: true }` when only results download is enabled",
+              );
+
+              // Disable PDF exports
+              cy.findByLabelText("Export to PDF").click({ force: true });
+
+              cy.findByTestId("embed-backend")
+                .findByTestId("copy-button")
+                .realClick();
+
+              H.expectUnstructuredSnowplowEvent({
+                event: "static_embed_code_copied",
+                artifact: resource,
+                language: "node",
+                location: "code_appearance",
+                code: "backend",
+                appearance: {
+                  background: true,
+                  bordered: true,
+                  titled: true,
+                  font: "instance",
+                  theme: "light",
+                  enabled_download_types: { pdf: false, results: true },
+                },
+              });
+
+              cy.log(
+                "Assert that it sends `enabled_download_types: { pdf: true, results: false }` when only PDF is enabled",
+              );
+
+              // Enable PDF exports again
+              cy.findByLabelText("Export to PDF").click({ force: true });
+
+              // Disable results download
+              cy.findByLabelText(
+                resource === "dashboard"
+                  ? "Results (csv, xlsx, json, png)"
+                  : "Download (csv, xlsx, json, png)",
+              ).click({ force: true });
+
+              cy.findByTestId("embed-backend")
+                .findByTestId("copy-button")
+                .realClick();
+
+              H.expectUnstructuredSnowplowEvent({
+                event: "static_embed_code_copied",
+                artifact: resource,
+                language: "node",
+                location: "code_appearance",
+                code: "backend",
+                appearance: {
+                  background: true,
+                  bordered: true,
+                  titled: true,
+                  font: "instance",
+                  theme: "light",
+                  enabled_download_types: { pdf: true, results: false },
+                },
+              });
+            });
+          }
         });
 
         it("should send `static_embed_discarded` when discarding changes in the static embed modal", () => {
@@ -670,7 +754,7 @@ describe("#39152 sharing an unsaved question", () => {
             cy.findByText("Discard changes").click();
           });
 
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "static_embed_discarded",
             artifact: resource,
           });
@@ -690,7 +774,7 @@ describe("#39152 sharing an unsaved question", () => {
             .click();
 
           cy.then(function () {
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_published",
               artifact: resource,
               new_embed: true,
@@ -728,7 +812,7 @@ describe("#39152 sharing an unsaved question", () => {
               .button("Publish")
               .click();
 
-            H.expectGoodSnowplowEvent({
+            H.expectUnstructuredSnowplowEvent({
               event: "static_embed_published",
               artifact: resource,
               new_embed: false,
@@ -756,7 +840,7 @@ describe("#39152 sharing an unsaved question", () => {
             cy.findByText("Unpublish").click();
           });
 
-          H.expectGoodSnowplowEvent({
+          H.expectUnstructuredSnowplowEvent({
             event: "static_embed_unpublished",
             artifact: resource,
             time_since_creation: closeTo(toSecond(HOUR), 10),

@@ -17,7 +17,7 @@ import { source } from "./language";
 import { getCardAutocompleteResultMeta, matchTagAtCursor } from "./util";
 
 // Keep this in sync with the limit in the backend code at
-// `autocomplete-suggestions` in src/metabase/api/database.clj
+// `autocomplete-suggestions` in src/metabase/warehouses/api.clj
 const AUTOCOMPLETE_SUGGESTIONS_LIMIT = 50;
 
 type SchemaCompletionOptions = {
@@ -148,7 +148,7 @@ export function useSnippetCompletion() {
 }
 
 // Keep this in sync with the limit in the backend code at
-// `autocomplete-cards` in src/metabase/api/database.clj
+// `autocomplete-cards` in src/metabase/warehouses/api.clj
 const AUTOCOMPLETE_CARD_SUGGESTIONS_LIMIT = 50;
 
 type CardTagCompletionOptions = {
@@ -277,7 +277,7 @@ export function useReferencedCardCompletion({
         },
         options: results.map((column) => ({
           label: column.field.name,
-          detail: `${column.card.name} :${column.field.base_type}`,
+          detail: `${column.card.name} ${column.field.database_type}`,
         })),
       };
     },

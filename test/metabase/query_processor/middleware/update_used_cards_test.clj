@@ -1,11 +1,9 @@
 (ns metabase.query-processor.middleware.update-used-cards-test
   (:require
-   [clojure.core.async :as a]
    [clojure.test :refer :all]
    [java-time.api :as t]
-   [metabase.dashboard-subscription-test :as dashboard-subscription-test]
-   [metabase.db :as mdb]
    [metabase.notification.test-util :as notification.tu]
+   [metabase.pulse.dashboard-subscription-test :as dashboard-subscription-test]
    [metabase.pulse.send :as pulse.send]
    [metabase.pulse.send-test :as pulse.send-test]
    [metabase.query-processor :as qp]
@@ -37,6 +35,8 @@
   "Check if `last_used_at` of `card-id` is nil, then execute `f`, then check that `last_used_at` is non nil."
   [card-id thunk]
   (assert (fn? thunk))
+  (t2/update! (t2/table-name :model/Card) card-id {:last_used_at #t "2025-05-16T12:40:00-07:00"
+                                                   :updated_at   #t "2025-05-16T12:40:00-07:00"})
   (let [original-last-used-at (card-last-used-at card-id)
         original-updated-at   (card-updated-at card-id)]
     (mt/with-temporary-setting-values [synchronous-batch-updates true]
@@ -119,19 +119,3 @@
                  (-> (t2/select-one-fn :last_used_at :model/Card card-id-1)
                      t/offset-date-time
                      (.withNano 0)))))))))
-
-(deftest with-cluster-locking-test
-  ;; this only works on postgres
-  (when (= (mdb/db-type) #_{:clj-kondo/ignore [:metabase/disallow-hardcoded-driver-names-in-tests]} :postgres)
-    (testing "cluster locking test error if lock is not released"
-      (let [fin-chan (a/chan)]
-        (future (#'qp.update-used-cards/do-with-pg-cluster-lock ::test-lock #(a/<!! fin-chan)))
-        (is (thrown-with-msg?
-             clojure.lang.ExceptionInfo #"Failed to run statement with cluster lock"
-             (#'qp.update-used-cards/do-with-pg-cluster-lock ::test-lock #(Thread/sleep 1))))
-        (a/>!! fin-chan :done)))
-    (testing "cluster locking test error if lock is released"
-      (let [fin-chan (a/chan)]
-        (future (#'qp.update-used-cards/do-with-pg-cluster-lock ::test-lock #(a/<!! fin-chan)))
-        (future (Thread/sleep 1000) (a/>!! fin-chan :done))
-        (is (nil? (#'qp.update-used-cards/do-with-pg-cluster-lock ::test-lock #(Thread/sleep 1))))))))

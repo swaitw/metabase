@@ -320,6 +320,13 @@
   ;; This default works for most models, but needs overriding for those that don't rely on entity_id.
   (maybe-labeled model-name entity :name))
 
+(defn log-path-str
+  "Returns a string for logging from a serdes path sequence (i.e. in :serdes/meta)"
+  [elements]
+  (->> elements
+       (map #(str (:model %) " " (:id %)))
+       (str/join " > ")))
+
 ;;; # Export Process
 ;;; An *export* (writing a Metabase instance's entities to disk) happens in two stages: *extraction* and *storage*.
 ;;; These are independent, and deliberately decoupled. The result of extraction is a reducible stream of Clojure maps,
@@ -495,7 +502,7 @@
 (defn log-and-extract-one
   "Extracts a single entity; will replace `extract-one` as public interface once `extract-one` overrides are gone."
   [model opts instance]
-  (log/infof "Extracting %s %s %s" model (:id instance) (entity-id model instance))
+  (log/info "Extracting" {:path (log-path-str (generate-path model instance))})
   (try
     (extract-one model opts instance)
     (catch Exception e
@@ -763,7 +770,9 @@
     (assert spec (str "No serialization spec defined for model " model-name))
     (-> (select-keys ingested (:copy spec))
         (into (for [[k transform] (:transform spec)
-                    :when (not (::nested transform))
+                    :when (and (not (::nested transform))
+                               ;; handling circuit-breaking
+                               (not (contains? (::strip ingested) k)))
                     :let [_         (assert-one-defined transform :import :import-with-context)
                           import-k  (:as transform k)
                           input     (get ingested import-k)
@@ -779,7 +788,9 @@
 (defn- spec-nested! [model-name ingested instance]
   (let [spec (make-spec model-name nil)]
     (doseq [[k transform] (:transform spec)
-            :when (::nested transform)
+            :when (and (::nested transform)
+                       ;; handling circuit-breaking
+                       (not (contains? (::strip ingested) k)))
             :let [_         (assert-one-defined transform :import :import-with-context)
                   input     (get ingested k)
                   f         (:import transform)
@@ -875,13 +886,6 @@
                                   :let [parents (rest (str/split location #"/"))]]
                               [entity_id (map coll-names (concat parents [(str id)]))]))]
     {:collections coll->path}))
-
-(defn log-path-str
-  "Returns a string for logging from a serdes path sequence (i.e. in :serdes/meta)"
-  [elements]
-  (->> elements
-       (map #(str (:model %) " " (:id %)))
-       (str/join " > ")))
 
 ;;; # Utilities for implementing serdes
 ;;; Note that many of these use `^::cache` to cache their lookups during deserialization. This greatly reduces the
@@ -979,7 +983,7 @@
   (when email
     (or (*import-fk-keyed* email 'User :email)
         ;; Need to break a circular dependency here.
-        (:id ((resolve 'metabase.models.user/serdes-synthesize-user!) {:email email :is_active false})))))
+        (:id ((resolve 'metabase.users.models.user/serdes-synthesize-user!) {:email email :is_active false})))))
 
 ;;; ## Tables
 
@@ -1361,7 +1365,7 @@
 
   Link cards are dashcards that link to internal entities like Database/Dashboard/... or an url.
 
-  It's here instead of [[metabase.models.dashboard-card]] to avoid cyclic deps."
+  It's here instead of [[metabase.dashboards.models.dashboard-card]] to avoid cyclic deps."
   {"card"       :model/Card
    "dataset"    :model/Card
    "collection" :model/Collection
@@ -1498,6 +1502,40 @@
         (update-keys #(-> % json/decode export-visualizations json/encode))
         (update-vals export-viz-click-behavior))))
 
+(defn- export-card-dimension-ref
+  [s]
+  (if-let [[_ card-id] (and (string? s) (re-matches #"^\$_card:(\d+)_name$" s))]
+    (str "$_card:" (*export-fk* (parse-long card-id) :model/Card) "_name")
+    s))
+
+(defn- export-visualizer-source-id
+  [source-id]
+  (when (string? source-id)
+    (if-let [card-id (second (re-matches #"^card:(\d+)$" source-id))]
+      (str "card:" (*export-fk* (parse-long card-id) :model/Card))
+      source-id)))
+
+(defn export-visualizer-settings
+  "Update embedded card ids to entity ids in visualizer dashcard settings"
+  [settings]
+  (m/update-existing-in
+   settings
+   [:visualization :columnValuesMapping]
+   (fn [mapping]
+     (into {}
+           (for [[k cols] mapping]
+             (let [updated-cols (cond
+                                  ;; e.g. [{:sourceId "card:119"} ...]
+                                  (and (coll? cols) (map? (first cols)))
+                                  (mapv #(update % :sourceId export-visualizer-source-id) cols)
+
+                                  ;; e.g. ["$_card:119_name"] for funnel dimensions
+                                  (and (coll? cols) (string? (first cols)))
+                                  (mapv export-card-dimension-ref cols)
+
+                                  :else cols)]
+               [k updated-cols]))))))
+
 (defn export-visualization-settings
   "Given the `:visualization_settings` map, convert all its field-ids to portable `[db schema table field]` form."
   [settings]
@@ -1506,6 +1544,7 @@
         export-visualizations
         export-viz-link-card
         export-viz-click-behavior
+        export-visualizer-settings
         export-pivot-table
         (update :column_settings export-column-settings))))
 
@@ -1546,6 +1585,40 @@
         (update-keys #(-> % name json/decode import-visualizations json/encode))
         (update-vals import-viz-click-behavior))))
 
+(defn- import-card-dimension-ref
+  [s]
+  (if-let [[_ card-id] (and (string? s) (re-matches #"^\$_card:([A-Za-z0-9_\-]{21})_name$" s))]
+    (str "$_card:" (*import-fk* card-id :model/Card) "_name")
+    s))
+
+(defn- import-visualizer-source-id
+  [source-id]
+  (when (string? source-id)
+    (if-let [card-entity-id (second (re-matches #"^card:([A-Za-z0-9_\-]{21})$" source-id))]
+      (str "card:" (*import-fk* card-entity-id :model/Card))
+      source-id)))
+
+(defn import-visualizer-settings
+  "Update embedded entity ids to card ids in visualizer dashcard settings"
+  [settings]
+  (m/update-existing-in
+   settings
+   [:visualization :columnValuesMapping]
+   (fn [mapping]
+     (into {}
+           (for [[k cols] mapping]
+             (let [updated-cols (cond
+                                   ;; e.g. [{:sourceId "card:..."} ...]
+                                  (and (coll? cols) (map? (first cols)))
+                                  (mapv #(update % :sourceId import-visualizer-source-id) cols)
+
+                                   ;; e.g. ["$_card:<id>_name"] for funnel dimensions
+                                  (and (coll? cols) (string? (first cols)))
+                                  (mapv import-card-dimension-ref cols)
+
+                                  :else cols)]
+               [k updated-cols]))))))
+
 (defn import-visualization-settings
   "Given an EDN value as exported by [[export-visualization-settings]], convert its portable `[db schema table field]`
   references into Field IDs."
@@ -1555,6 +1628,7 @@
         import-visualizations
         import-viz-link-card
         import-viz-click-behavior
+        import-visualizer-settings
         import-pivot-table
         (update :column_settings import-column-settings))))
 

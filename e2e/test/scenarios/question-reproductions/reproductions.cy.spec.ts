@@ -22,7 +22,7 @@ describe("issue 39487", () => {
 
   it(
     "calendar has constant size when using single date picker filter (metabase#39487)",
-    { tags: "@flaky", viewportHeight: 1000 },
+    { viewportHeight: 1000 },
     () => {
       createTimeSeriesQuestionWithFilter([">", CREATED_AT_FIELD, "2015-01-01"]); // 5 day rows
 
@@ -39,7 +39,7 @@ describe("issue 39487", () => {
       cy.button(/Filter/).click();
       H.popover().within(() => {
         cy.findByText("Created At").click();
-        cy.findByText("Specific dates…").click();
+        cy.findByText("Fixed date range…").click();
       });
       checkSingleDateFilter();
       cy.realPress("Escape");
@@ -52,7 +52,7 @@ describe("issue 39487", () => {
       cy.log("verify that previous popover is closed before opening new one");
       H.popover().findByText("Filter by this column").should("not.exist");
 
-      H.popover().findByText("Specific dates…").click();
+      H.popover().findByText("Fixed date range…").click();
       H.popover().findByText("After").click();
       H.popover().findByRole("textbox").clear().type("2015/01/01");
       checkSingleDateFilter();
@@ -99,7 +99,7 @@ describe("issue 39487", () => {
       cy.findByLabelText("Switch to data").click();
       H.tableHeaderClick("Created At: Year");
       H.popover().findByText("Filter by this column").click();
-      H.popover().findByText("Specific dates…").click();
+      H.popover().findByText("Fixed date range…").click();
       H.popover().findAllByRole("textbox").first().clear().type("2024/05/01");
       // eslint-disable-next-line no-unsafe-element-filtering
       H.popover().findAllByRole("textbox").last().clear().type("2024/06/01");
@@ -128,7 +128,7 @@ describe("issue 39487", () => {
       .findAllByTestId("notebook-cell-item")
       .first()
       .click();
-    H.popover().scrollTo("bottom");
+    H.popover().findByTestId("popover-content").scrollTo("bottom");
     H.popover().button("Update filter").should("be.visible").click();
   });
 
@@ -384,5 +384,44 @@ describe("issue 54817", () => {
     H.openOrdersTable();
     H.filter();
     H.popover().findByPlaceholderText(placeholder).should("be.focused");
+  });
+});
+
+describe("issue 57398", () => {
+  beforeEach(() => {
+    H.restore();
+    cy.signInAsNormalUser();
+  });
+
+  it("should show the query running state when navigating back (metabase#57398)", () => {
+    H.openProductsTable();
+    H.filter();
+    H.popover().within(() => {
+      cy.log("1st filter");
+      cy.findByText("Category").click();
+      cy.findByText("Widget").click();
+      cy.findByLabelText("Add another filter").click();
+
+      cy.log("2st filter");
+      cy.findByText("Vendor").click();
+      cy.findByText("Alfreda Konopelski II Group").click();
+      cy.findByLabelText("Add another filter").click();
+    });
+
+    cy.log("delay the response to be able to verify the running state");
+    cy.intercept("POST", "/api/dataset", (req) => {
+      req.on("response", (res) => {
+        res.setDelay(5000);
+      });
+    });
+
+    cy.go("back");
+    H.queryBuilderMain().findByTestId("loading-indicator").should("be.visible");
+    H.queryBuilderFiltersPanel().within(() => {
+      cy.findByText("Category is Widget").should("be.visible");
+      cy.findByText("Vendor is Alfreda Konopelski II Group").should(
+        "not.exist",
+      );
+    });
   });
 });

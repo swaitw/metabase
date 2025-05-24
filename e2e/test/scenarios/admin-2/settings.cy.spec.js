@@ -30,7 +30,7 @@ H.describeWithSnowplow("scenarios > admin > settings", () => {
         .findAllByRole("link", { name: "Learn more" })
         .click();
       // link opens in new tab
-      H.expectGoodSnowplowEvent({
+      H.expectUnstructuredSnowplowEvent({
         event: "upsell_viewed",
         promoted_feature: "cloud",
       });
@@ -64,7 +64,7 @@ H.describeWithSnowplow("scenarios > admin > settings", () => {
     //       If we update UI in the future (for example: we show an error within a popup/modal), the test in current form could fail.
     cy.log("Making sure we display an error message in UI");
     // Same reasoning for regex as above
-    H.undoToast().contains(/^Error: Invalid site URL/);
+    H.undoToast().contains(/^Invalid site URL/);
   });
 
   it("should save a setting", () => {
@@ -104,21 +104,24 @@ H.describeWithSnowplow("scenarios > admin > settings", () => {
 
     cy.intercept("GET", "**/api/health", "ok").as("httpsCheck");
 
-    // settings have loaded, but there's no redirect setting visible
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.contains("Site URL");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.contains("Redirect to HTTPS").should("not.exist");
+    cy.findByTestId("admin-layout-content").within(() => {
+      cy.contains("Site Url");
+      cy.contains("Redirect to HTTPS").should("not.exist");
 
-    // switch site url to use https
-    cy.findByTestId("site-url-setting")
-      .findByRole("textbox", { name: "input-prefix" })
-      .click();
+      // switch site url to use https
+      cy.findByTestId("site-url-setting")
+        .findByRole("textbox", { name: "input-prefix" })
+        .click();
+    });
+
     H.popover().contains("https://").click();
 
     cy.wait("@httpsCheck");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.contains("Redirect to HTTPS").parent().parent().contains("Disabled");
+    cy.findByTestId("admin-layout-content")
+      .contains("Redirect to HTTPS")
+      .parent()
+      .parent()
+      .contains("Disabled");
 
     H.restore(); // avoid leaving https site url
   });
@@ -149,16 +152,16 @@ H.describeWithSnowplow("scenarios > admin > settings", () => {
 
     cy.visit("/admin/settings/localization");
 
-    cy.findByTestId("custom-formatting-setting")
+    cy.findByTestId("date_style-formatting-setting")
       .findByDisplayValue("January 31, 2018")
       .click({ force: true });
 
     H.popover().findByText("2018/1/31").click({ force: true });
     cy.wait("@saveFormatting");
 
-    cy.findByTestId("chart-settings-widget-date_style")
-      .findByTestId("chart-setting-select")
-      .should("have.value", "2018/1/31");
+    cy.findByTestId("date_style-formatting-setting").findByDisplayValue(
+      "2018/1/31",
+    );
 
     cy.findByTestId("custom-formatting-setting")
       .findByText("17:24 (24-hour clock)")
@@ -217,21 +220,12 @@ H.describeWithSnowplow("scenarios > admin > settings", () => {
 
   it("should search for and select a new timezone", () => {
     cy.intercept("PUT", "**/report-timezone").as("reportTimezone");
-
     cy.visit("/admin/settings/localization");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.contains("Report Timezone")
-      .closest("li")
-      .findByTestId("report-timezone-select-button")
-      .click();
-
-    cy.findByPlaceholderText("Find...").type("Centr");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("US/Central").click({ force: true });
-
+    const timezoneSelect = cy.findByRole("textbox", { name: /timezone/i });
+    timezoneSelect.clear().type("Centr");
+    cy.findByRole("listbox").findByText("US/Central").click();
     cy.wait("@reportTimezone");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.contains("US/Central");
+    timezoneSelect.should("have.value", "US/Central");
   });
 
   it("'General' admin settings should handle setup via `MB_SITE_URL` environment variable (metabase#14900)", () => {
@@ -545,9 +539,12 @@ describe("scenarios > admin > settings > email settings", () => {
       Cypress.config().baseUrl + "/admin/settings/email",
     );
     cy.findByTestId("smtp-connection-card").should("exist");
-
     // Non SMTP-settings should save automatically
-    cy.findByLabelText("From Address").type("mailer@metabase.test").blur();
+    cy.findByLabelText("From Address")
+      .clear()
+      .type("mailer@metabase.test")
+      .blur();
+
     cy.findByLabelText("From Name").type("Sender Name").blur();
     cy.findByLabelText("Reply-To Address")
       .type("reply-to@metabase.test")
@@ -925,10 +922,9 @@ describe("scenarios > admin > localization", () => {
     cy.wait("@updateFormatting");
 
     cy.findByTestId("custom-formatting-setting").within(() => {
-      cy.findByTestId("chart-settings-widget-date_style")
-        .findByTestId("chart-setting-select")
-        .should("have.value", "2018/1/31");
-
+      cy.findByTestId("date_style-formatting-setting").findByDisplayValue(
+        "2018/1/31",
+      );
       // update the time style setting to 24 hour
       cy.findByText("17:24 (24-hour clock)").click();
       cy.wait("@updateFormatting");
@@ -942,7 +938,7 @@ describe("scenarios > admin > localization", () => {
 
     H.popover().within(() => {
       cy.findByText("Filter by this column").click();
-      cy.findByText("Specific dates…").click();
+      cy.findByText("Fixed date range…").click();
       cy.findByText("On").click();
 
       // ensure the date picker is ready
@@ -1283,29 +1279,37 @@ describe("admin > settings > updates", () => {
     cy.signInAsAdmin();
     cy.visit("/admin/settings/updates");
 
-    cy.intercept("GET", "/api/session/properties", (req, res) => {
+    cy.intercept("GET", "/api/session/properties", (req) => {
       req.continue((res) => {
-        res.body["version-info"] = versionInfo;
         res.body.version.tag = currentVersion;
         return res.body;
       });
     });
+
+    cy.intercept("GET", "/api/setting/version-info", (req) => {
+      req.reply(versionInfo);
+    });
   });
 
   it("should show the updates page", () => {
-    cy.findByLabelText("Check for updates").should("be.visible");
+    cy.findByTestId("check-for-updates-setting")
+      .findByText("Check for updates")
+      .should("be.visible");
+
     cy.findByTestId("update-channel-setting")
       .findByText("Types of releases to check for")
       .should("be.visible");
 
     cy.findByTestId("settings-updates").within(() => {
-      cy.findByText("Metabase 1.86.76 is available. You're running 1.86.70");
+      cy.findByText("Metabase 1.86.76 is available. You're running 1.86.70.");
       cy.findByText("Some old feature").should("be.visible");
     });
 
     cy.log("hide most things if updates are turned off");
 
-    cy.findByLabelText("Check for updates").click();
+    cy.findByTestId("check-for-updates-setting")
+      .findByText("Check for updates")
+      .click();
 
     cy.findByTestId("settings-updates").within(() => {
       cy.findByText("Types of releases to check for").should("not.exist");
@@ -1318,7 +1322,7 @@ describe("admin > settings > updates", () => {
       cy.findByText(/Metabase 1\.86\.76 is available/).should("be.visible");
       cy.findByText("Some old feature").should("be.visible");
       cy.findByText("New latest feature").should("be.visible");
-      cy.findByText("Stable releases").click();
+      cy.findByDisplayValue("Stable releases").click();
     });
 
     H.popover().findByText("Beta releases").click();
@@ -1328,7 +1332,7 @@ describe("admin > settings > updates", () => {
         "be.visible",
       );
       cy.findByText("New beta feature").should("be.visible");
-      cy.findByText("Beta releases").click();
+      cy.findByDisplayValue("Beta releases").click();
     });
 
     H.popover().findByText("Nightly builds").click();
